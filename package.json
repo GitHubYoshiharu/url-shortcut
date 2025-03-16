@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/chrome": "^0.0.309",
     "esbuild": "^0.15.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
