@@ -1,51 +1,234 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
+import { Controller, useForm } from "react-hook-form"
+import { Box, Button, Grid2, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Switch, TextField, Tooltip, Typography, Paper } from "@mui/material";
+import CopyIcon from '@mui/icons-material/ContentCopy';
+import MenuIcon from '@mui/icons-material/MoreVert';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import SearchIcon from '@mui/icons-material/Search';
+import AddIcon from '@mui/icons-material/Add';
 
-const SearchResult = ({ openDialog, deleteShortcut, searchResults }: {
+const SearchResult = React.memo(({ openDialog, deleteShortcut, searchResults }: {
   openDialog: (title: string, shortcutText: string, url: string) => void,
   deleteShortcut: (title: string, shortcutText: string, url: string) => void,
-  searchResults: Array<any> | null}) => {
+  searchResults: Array<any>}) => {
+  const [openMenuShortcut, setOpenMenuShortcut] = useState<string>(''); // Menuは同時に1つしか開かないので、開いているMenuだけを保持すればいい
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-  // popupページでaタグをクリックしても開けない問題を解決する（親要素で子要素のイベントをキャッチする）。
-  const handleChildLinkClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const clickedElem = event.target as HTMLElement;
-    if (clickedElem.className !== 'shortcutLink') return;
+  // onClickイベントでは、マウスボタンの入力状況は取得できないらしい
+  const handleListItemClick = (url: string, event: React.MouseEvent) => {
+    event.stopPropagation();
 
-    const href = clickedElem.getAttribute('href');
-    if (href === null) return;
-
-    // デフォルトでCtrl+クリックだけはなぜか効くので、開く処理が重複しないようにする。
-    if (!event.nativeEvent.ctrlKey) {
-      browser.tabs.update({ "url": href });
+    // Ctrl+Shift+クリック・Shift+ホイールクリック：別のタブで開いて移動
+    // Ctrl+クリック・ホイールクリック：別のタブで開く
+    // Shift+クリック：別のウィンドウで開く
+    // クリック：このタブで開く
+    const clickLeft = event.nativeEvent.button === 0;
+    const clickCenter = event.nativeEvent.button === 1;
+    const pressCtrl = event.nativeEvent.ctrlKey;
+    const pressShift = event.nativeEvent.shiftKey;
+    if ( (pressCtrl && pressShift && clickLeft) || (pressShift && clickCenter) ) {
+      browser.tabs.create({ "url": url });
+    } else if( (pressCtrl && clickLeft) || clickCenter ){
+      browser.tabs.create({ "url": url, "active": false });
+    } else if (pressShift && clickLeft) {
+      browser.windows.create({ "url": url, "state": "maximized" });
+    } else if (clickLeft) {
+      browser.tabs.update({ "url": url });
     }
   };
 
+  const handleMenuOpen = (shortcutText: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+    setOpenMenuShortcut(shortcutText);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setOpenMenuShortcut('');
+  };
+
   return (
-    <div className='search-results' onClick={handleChildLinkClick}>
-      {searchResults !== null && searchResults.map(elem => (
-          <p>
-            <a className='shortcutLink' href={elem.url}>{`${elem.shortcutText} ${elem.title}`}</a>
-            <button className="editButton" onClick={() => openDialog(elem.title, elem.shortcutText, elem.url)}>編集</button>
-            <button className="deleteButton" onClick={() => deleteShortcut(elem.title, elem.shortcutText, elem.url)}>削除</button>
-          </p>
-        ))
+    <List
+      dense
+      sx={{ 'width': '100%', 'max-height': '320px', 'bgcolor': 'background.paper', 'overflow': 'auto' }}
+    >
+      {searchResults.length > 0 && searchResults.map((elem, idx) => {
+          return (
+            <ListItem
+              disablePadding
+              alignItems='flex-start'
+              divider
+              sx={{ 'borderLeft': '1px solid rgba(0, 0, 0, 0.12)', 'borderTop': (idx === 0) ? '1px solid rgba(0, 0, 0, 0.12)' : 'none'}}
+              secondaryAction={
+                <div>
+                  <IconButton edge="end" aria-label="menu" onClick={(event) => handleMenuOpen(elem.shortcutText, event)}>
+                    <MenuIcon fontSize="small" />
+                  </IconButton>
+                  <Menu
+                    anchorEl={anchorEl}
+                    open={elem.shortcutText === openMenuShortcut}
+                    onClose={handleMenuClose}
+                  >
+                    <MenuItem onClick={() => {
+                      handleMenuClose();
+                      openDialog(elem.title, elem.shortcutText, elem.url);
+                    }}>
+                      <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>編集</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      handleMenuClose();
+                      deleteShortcut(elem.title, elem.shortcutText, elem.url);
+                    }}>
+                      <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>削除</ListItemText>
+                    </MenuItem>
+                  </Menu>
+                </div>
+              }
+            >
+              <ListItemButton 
+                role={undefined}
+                sx={{'padding-left': '14px'}}
+                onMouseDown={(event) => handleListItemClick(elem.url, event)}
+              >
+                <Grid2
+                  container
+                  spacing={3.5}
+                >
+                  <Grid2
+                    size='auto'
+                    sx={{'display': 'flex', 'justify-content': 'center', 'align-items': 'center'}}
+                  >
+                    <ListItemText
+                      slotProps={{
+                        'primary': {
+                          'sx': {
+                            'fontSize': (elem.shortcutText.length <= 6) ? '1rem' :
+                              (elem.shortcutText.length <= 10) ? '0.875rem' :
+                              (elem.shortcutText.length <= 15) ? '0.775rem' : '0.725rem'
+                          }
+                        }
+                      }}
+                      primary={elem.shortcutText.replaceAll(' ', '␣').replaceAll('　', '␣␣')}
+                    />
+                  </Grid2>
+                  <Grid2 size="grow">
+                    <ListItemText
+                      sx={{'display': 'inline-grid'}}
+                      slotProps={{
+                        'primary': {
+                          'sx': {'white-space': 'nowrap', 'text-overflow': 'ellipsis', 'overflow': 'hidden'}
+                        },
+                        'secondary': {
+                          'sx': {'font-size': '0.5em', 'white-space': 'nowrap', 'text-overflow': 'ellipsis', 'overflow': 'hidden'}
+                        }
+                      }}
+                      primary={elem.title} secondary={elem.url}
+                    />
+                  </Grid2>
+                </Grid2>
+              </ListItemButton>
+            </ListItem>
+          );
+      })}
+      {searchResults.length === 0 &&
+        <Typography variant="body2" align='center'>
+          表示できるショートカットはありません
+        </Typography>
       }
-      {searchResults?.length === 0 &&
-        <p>表示できるショートカットはありません</p>
-      }
-    </div>
+    </List>
   );
-};
+});
+
+// delayミリ秒後にvalueを返す
+const useDebounce = (value: string, delay: number) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+type FormInputs = {
+  "title": string,
+  "shortcutText": string,
+  "url": string
+}
 
 export const Popup: React.FC = () => {
   const shortcuts = useRef<Array<any> | null>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  const checkboxRef = useRef<HTMLInputElement>(null);
-  const searchInRef = useRef<HTMLInputElement>(null);
-  const titleInRef = useRef<HTMLInputElement>(null);
-  const urlInRef = useRef<HTMLInputElement>(null);
+  const onSubmitHandler = useRef<(...args: never[]) => void>();
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dialogTitle, setDialogTitle] = useState<string>('');
+  const [submitButtonText, setSubmitButtonText] = useState<string>('');
+  const [isOpenDialog, setIsOpenDialog] = useState<boolean>(false);
+  const [isTitleSearch, setIsTitleSearch] = useState<boolean>(false);
   const [searchResults, setSearchResults] = useState<Array<any>>([]);
+  
+  // 指定ミリ秒後に検索結果をレンダリングする
+  const debouncedQuery = useDebounce(searchQuery, 300);
+  useEffect(() => {
+    refreshSearchResults();
+  }, [debouncedQuery]);
+
+  const {
+    control,
+    reset,
+    getValues,
+    setValue,
+    setError,
+    formState: {
+      isValid,
+      isSubmitting,
+  }} = useForm<FormInputs>({ mode: 'onChange' });
+
+  const validationRules = {
+    "title": {
+      required: "入力必須です",
+      validate: (data: string) => {
+        if (data.trim().length === 0){
+          return "スペースのみでは登録できません";
+        }
+      }
+    },
+    "shortcutText": {
+      required: "入力必須です",
+      validate: (data: string) => {
+        if (data.trim().length < data.length){
+          return "先頭・末尾にスペースは入れられません";
+        }
+        if ( /\s{2,}/.test(data) ){
+          return "2つ以上連続したスペースは入れられません";
+        }
+      }
+    },
+    "url": {
+      required: "入力必須です",
+      validate: (data: string) => {
+        if (data.trim().length === 0){
+          return "スペースのみでは登録できません";
+        }
+        if(!URL.canParse(data)) {
+          return "有効なURLではありません";
+        }
+      }
+    }
+  };
 
   if(shortcuts.current === null) {
     chrome.storage.local.get(["shortcuts"], items => {
@@ -57,25 +240,26 @@ export const Popup: React.FC = () => {
     });
   }
 
-  const handleSaveButtonClick = (oldShortcutText: string) => {
+  const handleSaveButtonClick = (oldShortcutText: string, event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if(shortcuts.current === null) return;
-    const inElems = formRef.current?.elements as HTMLFormControlsCollection;
-    const titleElem = inElems.namedItem('title') as HTMLInputElement;
-    const shortcutElem = inElems.namedItem('shortcut-text') as HTMLInputElement;
-    const urlElem = inElems.namedItem('url') as HTMLInputElement;
+    const titleValue = getValues('title');
+    const shortcutValue = getValues('shortcutText');
+    const urlValue = getValues('url');
 
     // 編集された結果、他のショートカットと重複してしまった場合を考慮する
-    if (shortcutElem.value !== oldShortcutText){
-      const matchIndex = shortcuts.current.findIndex(s => s.shortcutText === shortcutElem.value);
+    if (shortcutValue !== oldShortcutText){
+      const matchIndex = shortcuts.current.findIndex(s => s.shortcutText === shortcutValue);
       if(matchIndex !== -1){
-        const errorMessageElem = document.getElementById('error-message') as HTMLParagraphElement;
-        errorMessageElem.textContent = "他のショートカットと重複しています";
-        // TODO: どのショートカットと被っているかを表示すると親切だね
+        setError("shortcutText", {
+          type: "duplicate shortcutText error",
+          message: "他のショートカットと重複しています"
+        });
         return;
       }
     }
-    saveShortcut(titleElem.value, shortcutElem.value, oldShortcutText, urlElem.value);
-    dialogRef.current?.close();
+    saveShortcut(titleValue, shortcutValue, oldShortcutText, urlValue);
+    handleDialogClose();
   };
 
   const saveShortcut = (title: string, newShortcutText: string, oldShortcutText: string, url: string) => {
@@ -89,21 +273,22 @@ export const Popup: React.FC = () => {
     refreshSearchResults();
   };
 
-  const handleAddButtonClick = () => {
+  const handleAddButtonClick = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if(shortcuts.current === null) return;
-    const inElems = formRef.current?.elements as HTMLFormControlsCollection;
-    const titleElem = inElems.namedItem('title') as HTMLInputElement;
-    const shortcutElem = inElems.namedItem('shortcut-text') as HTMLInputElement;
-    const urlElem = inElems.namedItem('url') as HTMLInputElement;
+    const titleValue = getValues('title');
+    const shortcutValue = getValues('shortcutText');
+    const urlValue = getValues('url');
 
-    const matchIndex = shortcuts.current.findIndex(s => s.shortcutText === shortcutElem.value);
+    const matchIndex = shortcuts.current.findIndex(s => s.shortcutText === shortcutValue);
     if(matchIndex !== -1){
-      const errorMessageElem = document.getElementById('error-message') as HTMLParagraphElement;
-      errorMessageElem.textContent = "このショートカットは既に存在しています";
-      // TODO: どのショートカットと被っているかを表示すると親切だね
+      setError("shortcutText", {
+        type: "duplicate shortcutText error",
+        message: "他のショートカットと重複しています"
+      });
     } else {
-      addShortcut(titleElem.value, shortcutElem.value, urlElem.value);
-      dialogRef.current?.close();
+      addShortcut(titleValue, shortcutValue, urlValue);
+      handleDialogClose();
     }
   };
 
@@ -122,7 +307,7 @@ export const Popup: React.FC = () => {
     const message = `
       以下のショートカットを削除します。よろしいですか？\n
       タイトル: ${title}\n
-      ショートカット: ${shortcutText}\n
+      ショートカットテキスト: ${shortcutText}\n
       URL: ${url}
     `;
     if ( window.confirm(message) ) {
@@ -134,18 +319,22 @@ export const Popup: React.FC = () => {
     }
   };
 
+  // ???: refの型引数にHTMLInputElementを指定すると、「HTMLButtonElementですよ」と謎の文句を言われるので、
+  // ref経由でcheckedの値が取得できない。useStateから自力で指定するしかない。なにこれ？
+  const handleSearchTypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setIsTitleSearch(event.target.checked);
+  };
+
   const refreshSearchResults = () => {
     let latestSearchResults: Array<any> | undefined = [];
-    const query = (searchInRef.current as HTMLInputElement).value;
-    if (query !== '') {
-      const checkboxElem = checkboxRef.current as HTMLInputElement;
-      if (checkboxElem.checked){ // タイトルで検索する
+    if (searchQuery !== '') {
+      if (isTitleSearch){ // タイトルで検索する
         latestSearchResults = shortcuts.current?.filter(s => {
-          return s.title.includes(query);
+          return s.title.includes(searchQuery);
         });
       } else { // ショートカットで検索する
         latestSearchResults = shortcuts.current?.filter(s => {
-          return s.shortcutText.startsWith(query);
+          return s.shortcutText.startsWith(searchQuery);
         });
       }
     }
@@ -153,24 +342,24 @@ export const Popup: React.FC = () => {
   };
 
   const openDialog = (title: string, shortcutText: string, url: string) => {
-    const inElems = formRef.current?.elements as HTMLFormControlsCollection;
-    const titleElem = inElems.namedItem('title') as HTMLInputElement;
-    const shortcutElem = inElems.namedItem('shortcut-text') as HTMLInputElement;
-    const urlElem = inElems.namedItem('url') as HTMLInputElement;
-    titleElem.value = title;
-    shortcutElem.value = shortcutText;
-    urlElem.value = url;
+    // 「defaultValues」をセットしないと、HTMLのネイティブreset APIがフォームを復元してしまう。
+    reset({
+      'title': title,
+      'shortcutText': shortcutText,
+      'url': url
+    });
 
     // どの目的でダイアログが開かれたかをパラメータから判断する
-    const submitElem = inElems.namedItem('submitButton') as HTMLButtonElement;
     if (title === '' && shortcutText === '' && url === '') {
-      submitElem.textContent = '追加';
-      submitElem.onclick = handleAddButtonClick;
+      setDialogTitle('ショートカットを追加');
+      setSubmitButtonText('追加');
+      onSubmitHandler.current = handleAddButtonClick;
     } else {
-      submitElem.textContent = '保存';
-      submitElem.onclick = () => handleSaveButtonClick(shortcutText);
+      setDialogTitle('ショートカットを編集');
+      setSubmitButtonText('保存');
+      onSubmitHandler.current = (event) => handleSaveButtonClick(shortcutText, event);
     }    
-    dialogRef.current?.showModal();
+    setIsOpenDialog(true);
   };
 
   const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
@@ -178,11 +367,12 @@ export const Popup: React.FC = () => {
     if (keyEvent.nativeEvent.isComposing || keyEvent.key !== 'Enter') return;
     if (shortcuts.current === null) return;
 
-    const query = keyEvent.currentTarget.value;
-    const matchIdx = shortcuts.current.findIndex(s => s.shortcutText === query);
+    const matchIdx = shortcuts.current.findIndex(s => s.shortcutText === searchQuery);
     if (matchIdx !== -1) {
-      if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
+      if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
         browser.tabs.create({ "url": shortcuts.current[matchIdx].url });
+      } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
+        browser.tabs.create({ "url": shortcuts.current[matchIdx].url, "active": false });
       } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
         browser.windows.create({ "url": shortcuts.current[matchIdx].url, "state": "maximized" });
       } else { // Enter: 現在のタブで開く
@@ -192,49 +382,125 @@ export const Popup: React.FC = () => {
   };
 
   const copyTitle = () => {
-    const copyTargetElem = titleInRef.current as HTMLInputElement;
-    chrome.tabs.query({active: true, lastFocusedWindow: true}, tabs => {  
-      copyTargetElem.value = tabs[0].title ? tabs[0].title : copyTargetElem.value;
+    chrome.tabs.query({active: true, lastFocusedWindow: true}, tabs => {
+      setValue('title', tabs[0].title ? tabs[0].title : getValues('title'), { shouldValidate: true });
     });
   };
 
   const copyUrl = () => {
-    const copyTargetElem = urlInRef.current as HTMLInputElement;
-    chrome.tabs.query({active: true, lastFocusedWindow: true}, tabs => {  
-      copyTargetElem.value = tabs[0].url ? tabs[0].url : copyTargetElem.value;
+    chrome.tabs.query({active: true, lastFocusedWindow: true}, tabs => {
+      setValue('url', tabs[0].url ? tabs[0].url : getValues('url'), { shouldValidate: true });
     });
+  };
+
+  const handleDialogClose = () => {
+    reset(); // フォームの値やstateをリセット
+    setIsOpenDialog(false);
   };
 
   return (
     <>
-      <dialog ref={dialogRef}>
-        <form ref={formRef}>
-          <label>
-            タイトル<input ref={titleInRef} type="text" name="title"/>
-            <button type="button" onClick={copyTitle}>コピー</button>
-          </label>
-          <label>
-            ショートカット<input type="text" name="shortcut-text"/>
-          </label>
-          <label>
-            URL<input ref={urlInRef} type="text" name="url"/>
-            <button type="button" onClick={copyUrl}>コピー</button>
-          </label>
-          <p id="error-message"></p>
-          <button type="button" onClick={() => dialogRef.current?.close()}>キャンセル</button>
-          <button type="button" name="submitButton"></button>
+      <Dialog
+        open={isOpenDialog}
+        onClose={handleDialogClose}>
+        <DialogTitle sx={{'paddingBottom': '8px', 'font-size': '1rem'}}>{dialogTitle}</DialogTitle>
+        <form onSubmit={onSubmitHandler.current}>
+          <DialogContent>
+            <Stack direction="column" spacing={2}>
+              <Controller
+                name="title"
+                control={control}
+                rules={validationRules.title}
+                render={({ field, fieldState }) => (
+                  <Stack direction="row" spacing={1}>
+                    <TextField
+                      onChange={field.onChange}
+                      type="text"
+                      label="タイトル"
+                      value={field.value || ''}
+                      error={fieldState.invalid}
+                      helperText={fieldState.error?.message}
+                      size='small'
+                    />
+                    <Tooltip title="現在のタブからコピー">
+                      <IconButton aria-label="copy title" type="button" onClick={copyTitle}>
+                        <CopyIcon fontSize='small' />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                )}
+              />
+              <Controller
+                name="shortcutText"
+                control={control}
+                rules={validationRules.shortcutText}
+                render={({ field, fieldState }) => (
+                  <TextField
+                    onChange={field.onChange}
+                    type="text"
+                    label="ショートカットテキスト"
+                    value={field.value || ''}
+                    error={fieldState.invalid}
+                    helperText={fieldState.error?.message}
+                    size='small'
+                  />
+                )}
+              />
+              <Controller
+                name="url"
+                control={control}
+                rules={validationRules.url}
+                render={({ field, fieldState }) => (
+                  <Stack direction="row" spacing={1}>
+                    <TextField
+                      onChange={field.onChange}
+                      type="text"
+                      label="URL"
+                      value={field.value || ''}
+                      error={fieldState.invalid}
+                      helperText={fieldState.error?.message}
+                      size='small'
+                    />
+                    <Tooltip title="現在のタブからコピー">
+                      <IconButton aria-label="copy URL" type="button" onClick={copyUrl}>
+                        <CopyIcon fontSize='small' />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                )}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button type="button" variant="outlined" onClick={handleDialogClose}>キャンセル</Button>
+            <Button type="submit" variant="contained" disabled={!isValid || isSubmitting}>{submitButtonText}</Button>
+          </DialogActions>
         </form>
-      </dialog>
-      <input ref={searchInRef}
-        type="text" 
-        onKeyDown={openUrl}
-        onChange={refreshSearchResults}
-        autoFocus
-       />
-      <label>
-        タイトルで検索<input ref={checkboxRef} type="checkbox" />
-      </label>
-      <button onClick={() => openDialog('', '', '')}>追加</button>
+      </Dialog>
+      <Box sx={{'padding': '4px'}} flexDirection="row" justifyContent="flex-end" display="flex">
+        <Button variant="contained" onClick={() => openDialog('', '', '')} startIcon={<AddIcon fontSize='small' />}>追加</Button>
+      </Box>
+      <Paper elevation={2} sx={{'padding': '10px 0px', 'margin': '8px 12px'}}>
+        <Stack spacing={0.5} sx={{'justifyContent': "center", 'alignItems': "center"}}>
+          <TextField 
+            type="text"
+            onKeyDown={openUrl}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            size='small'
+            autoFocus
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize='small' />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <FormControlLabel control={<Switch checked={isTitleSearch} onChange={handleSearchTypeChange} />} label="タイトルで検索" />
+        </Stack>
+      </Paper>
       <SearchResult openDialog={openDialog} deleteShortcut={deleteShortcut} searchResults={searchResults} />
     </>
   );
