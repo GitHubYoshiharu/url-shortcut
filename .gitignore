@@ -138,3 +138,7 @@ dist
 /web-ext-artifacts
 /dist-firefox
 /dist-chrome
+
+# for store page
+*.zip
+/store_image

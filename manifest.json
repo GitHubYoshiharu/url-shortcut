@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "url-shortcut",
+  "name": "url-shortcut（TEST）",
   "version": "1.0",
   "description": "設定したショートカットテキストで特定のURLを開けるようにします。",
   "icons": {
