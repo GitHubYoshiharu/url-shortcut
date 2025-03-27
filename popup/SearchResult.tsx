@@ -66,7 +66,11 @@ export const SearchResult = React.memo(({ openDialog, deleteShortcut, subject }:
               disablePadding
               alignItems='flex-start'
               divider
-              sx={{ 'borderLeft': '1px solid rgba(0, 0, 0, 0.12)', 'borderTop': (idx === 0) ? '1px solid rgba(0, 0, 0, 0.12)' : 'none'}}
+              sx={{ 
+                'borderLeft': '1px solid rgba(0, 0, 0, 0.12)',
+                'borderRight': '1px solid rgba(0, 0, 0, 0.12)',
+                'borderTop': (idx === 0) ? '1px solid rgba(0, 0, 0, 0.12)' : 'none'
+              }}
               secondaryAction={
                 <div>
                   <IconButton edge="end" aria-label="menu" onClick={(event) => handleMenuOpen(elem.shortcutText, event)}>

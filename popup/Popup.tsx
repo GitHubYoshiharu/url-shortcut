@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useInsertionEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
 import { Controller, useForm } from "react-hook-form"
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Paper } from "@mui/material";
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Paper, Typography } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import { Subject } from 'rxjs';
@@ -32,6 +32,11 @@ export const Popup: React.FC = () => {
   const subjectSearchResult = useRef<Subject<Array<any>>>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isTitleSearch, setIsTitleSearch] = useState<boolean>(false);
+
+  const [hint, setHint] = useState<string>('');
+  const searchResultsCashe = useRef<Array<any>>([]);
+  const searchResultsCasheIdx = useRef<number>();
+
 
   // 指定ミリ秒後に検索結果をレンダリングする
   const debouncedQuery = useDebounce(searchQuery, 200);
@@ -95,7 +100,11 @@ export const Popup: React.FC = () => {
         });
       }
     }
-    subjectSearchResult.current?.next(latestSearchResults ? latestSearchResults : []);
+    latestSearchResults = latestSearchResults ? latestSearchResults : [];
+    searchResultsCashe.current = latestSearchResults;
+    searchResultsCasheIdx.current = undefined;
+    setHint('');
+    subjectSearchResult.current?.next(latestSearchResults);
   };
 
   // 以下のopenDialog()とdeleteShortcut()は、SearchResultにpropsで渡す関数なので、メモ化しておく。
@@ -126,18 +135,39 @@ export const Popup: React.FC = () => {
     }
   }, [shortcuts]);
 
-  const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleTextFieldKeyDown = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
     // 予測変換中に押されたキー入力は無視する
-    if (keyEvent.nativeEvent.isComposing || keyEvent.key !== 'Enter') return;
+    if (keyEvent.nativeEvent.isComposing) return;
+
+    if (keyEvent.key === 'Tab'){
+      keyEvent.preventDefault();
+      if (searchResultsCashe.current.length === 0) return;
+      // リストの上と下を繋げる
+      if (keyEvent.ctrlKey) {
+        if (searchResultsCasheIdx.current == undefined) return;
+        searchResultsCasheIdx.current = (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
+      } else {
+        searchResultsCasheIdx.current = (searchResultsCasheIdx.current == undefined) ? 0 :
+          (searchResultsCasheIdx.current === searchResultsCashe.current.length-1) ? 0 : searchResultsCasheIdx.current + 1;
+      }
+      setHint(searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText);
+      // TODO: SearchResultにindexを送る
+      // subjectSearchResult.current?.next(searchResultsCasheIdx.current);
+    } else if(keyEvent.key === 'Enter'){
+      openUrl(keyEvent.ctrlKey, keyEvent.shiftKey);
+    }
+  };
+
+  const openUrl = (ctrlKey: boolean, shiftKey: boolean) => {
     if (shortcuts == undefined) return;
 
-    const matchIdx = shortcuts.findIndex(s => s.shortcutText === searchQuery);
+    const matchIdx = shortcuts.findIndex(s => (s.shortcutText === searchQuery) || (s.shortcutText === hint));
     if (matchIdx !== -1) {
-      if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
+      if (ctrlKey && shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
         browser.tabs.create({ "url": shortcuts[matchIdx].url });
-      } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
+      } else if (ctrlKey) { // Ctrl+Enter: 別タブで開く
         browser.tabs.create({ "url": shortcuts[matchIdx].url, "active": false });
-      } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
+      } else if (shiftKey) { // Shift+Enter: 別ウィンドウで開く
         browser.windows.create({ "url": shortcuts[matchIdx].url, "state": "maximized" });
       } else { // Enter: 現在のタブで開く
         browser.tabs.update({ "url": shortcuts[matchIdx].url });
@@ -153,23 +183,38 @@ export const Popup: React.FC = () => {
       </Box>
       <Paper elevation={2} sx={{'padding': '10px 0px', 'margin': '8px 12px'}}>
         <Stack spacing={0.5} sx={{'justifyContent': "center", 'alignItems': "center"}}>
-          <TextField 
-            type="text"
-            onKeyDown={openUrl}
-            onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            value={searchQuery}
-            size='small'
-            autoFocus
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize='small' />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+          <Box sx={{ position: 'relative' }}>
+              <Typography
+                sx={{
+                  position: 'absolute',
+                  opacity: 0.5,
+                  left: 42,
+                  top: 8.5,
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  width: 'calc(100% - 42px)'
+                }}
+              >
+                {hint}
+              </Typography>
+            <TextField 
+              type="text"
+              onKeyDown={handleTextFieldKeyDown}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              value={searchQuery}
+              size='small'
+              autoFocus
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize='small' />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </Box>
           <FormControlLabel control={<Switch checked={isTitleSearch} onChange={handleSearchTypeChange} />} label="タイトルで検索" />
         </Stack>
       </Paper>
