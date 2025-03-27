@@ -9,15 +9,27 @@ import { Subject } from "rxjs";
 export const SearchResult = React.memo(({ openDialog, deleteShortcut, subject }: {
   openDialog: (title: string, shortcutText: string, url: string) => void,
   deleteShortcut: (title: string, shortcutText: string, url: string) => void,
-  subject: Subject<Array<any>>}) => {
+  subject: Subject<any>}) => {
   const [openMenuShortcut, setOpenMenuShortcut] = useState<string>(''); // Menuは同時に1つしか開かないので、開いているMenuだけを保持すればいい
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [searchResults, setSearchResults] = useState<Array<any>>([]);
   const doSubscribe = useRef<boolean>(false);
+  const listRef = useRef<HTMLUListElement>(null);
+  const hintElem = useRef<HTMLLIElement | null>();
 
   if (!doSubscribe.current) {
     subject.subscribe(v => {
-        setSearchResults(v);
+      if (hintElem.current != undefined) {
+        hintElem.current.classList.remove('hintElem');
+      }
+      if (v.searchResults) {
+        setSearchResults(v.searchResults);
+        hintElem.current = undefined;
+      } else {
+        hintElem.current = listRef.current?.querySelector(`li:nth-child(${v.searchResultsIdx + 1})`);
+        hintElem.current?.scrollIntoView(); // 要素がリストの一番上に来るようにスクロールする
+        hintElem.current?.classList.add('hintElem'); // 強調表示の有無はクラスの有無で切り替える
+      }
     });
     doSubscribe.current = true;
   }
@@ -57,8 +69,11 @@ export const SearchResult = React.memo(({ openDialog, deleteShortcut, subject }:
 
   return (
     <List
+      ref={listRef}
       dense
-      sx={{ 'width': '100%', 'max-height': '320px', 'bgcolor': 'background.paper', 'overflow': 'auto' }}
+      sx={{ 'width': '100%', 'max-height': '320px', 'bgcolor': 'background.paper', 'overflow': 'auto', 'scroll-padding-top': '3px',
+        'li.hintElem': {'border': '3px solid rgba(0, 0, 0, 0.3) !important'}
+      }}
     >
       {searchResults.length > 0 && searchResults.map((elem, idx) => {
           return (

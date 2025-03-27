@@ -29,7 +29,7 @@ const useDebounce = (value: string, delay: number) => {
 export const Popup: React.FC = () => {
   const [shortcuts, setShortcuts] = useState<Array<any>>();
   const subjectShortcutFormDialog = useRef<Subject<any>>();
-  const subjectSearchResult = useRef<Subject<Array<any>>>();
+  const subjectSearchResult = useRef<Subject<any>>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isTitleSearch, setIsTitleSearch] = useState<boolean>(false);
 
@@ -104,7 +104,7 @@ export const Popup: React.FC = () => {
     searchResultsCashe.current = latestSearchResults;
     searchResultsCasheIdx.current = undefined;
     setHint('');
-    subjectSearchResult.current?.next(latestSearchResults);
+    subjectSearchResult.current?.next({'searchResults': latestSearchResults, 'searchResultsIdx': undefined});
   };
 
   // 以下のopenDialog()とdeleteShortcut()は、SearchResultにpropsで渡す関数なので、メモ化しておく。
@@ -135,6 +135,7 @@ export const Popup: React.FC = () => {
     }
   }, [shortcuts]);
 
+  // TODO: タイトル検索時のヒント機能はどうする？無効にする？
   const handleTextFieldKeyDown = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
     // 予測変換中に押されたキー入力は無視する
     if (keyEvent.nativeEvent.isComposing) return;
@@ -150,9 +151,9 @@ export const Popup: React.FC = () => {
         searchResultsCasheIdx.current = (searchResultsCasheIdx.current == undefined) ? 0 :
           (searchResultsCasheIdx.current === searchResultsCashe.current.length-1) ? 0 : searchResultsCasheIdx.current + 1;
       }
-      setHint(searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText);
-      // TODO: SearchResultにindexを送る
-      // subjectSearchResult.current?.next(searchResultsCasheIdx.current);
+      const hintText = isTitleSearch ? '' : searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
+      setHint(hintText);
+      subjectSearchResult.current?.next({'searchResults': undefined, 'searchResultsIdx': searchResultsCasheIdx.current});
     } else if(keyEvent.key === 'Enter'){
       openUrl(keyEvent.ctrlKey, keyEvent.shiftKey);
     }
@@ -161,7 +162,14 @@ export const Popup: React.FC = () => {
   const openUrl = (ctrlKey: boolean, shiftKey: boolean) => {
     if (shortcuts == undefined) return;
 
-    const matchIdx = shortcuts.findIndex(s => (s.shortcutText === searchQuery) || (s.shortcutText === hint));
+    const matchIdx = shortcuts.findIndex(s => {
+      if (isTitleSearch && searchResultsCasheIdx.current != undefined) {
+        const hintShortcutText = searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
+        return s.shortcutText === hintShortcutText;
+      } else {
+        return (s.shortcutText === searchQuery) || (s.shortcutText === hint);
+      }
+    });
     if (matchIdx !== -1) {
       if (ctrlKey && shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
         browser.tabs.create({ "url": shortcuts[matchIdx].url });
