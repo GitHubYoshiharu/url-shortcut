@@ -1,35 +1,19 @@
-import React, { useCallback, useEffect, useInsertionEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
-import { Controller, useForm } from "react-hook-form"
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Paper, Typography } from "@mui/material";
+import { Box, Button, FormControlLabel, InputAdornment, Stack, Switch, TextField, Paper, Typography } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import { Subject } from 'rxjs';
 
 import { SearchResult } from './SearchResult';
 import { ShortcutFormDialog } from './ShortcutFormDialog';
-
-// delayミリ秒後にvalueを返す
-const useDebounce = (value: string, delay: number) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-}
+import { useDebounce } from './useDebounce';
 
 export const Popup: React.FC = () => {
+  const subjectShortcutFormDialog = useRef<Subject<{'shortcuts': Array<any> | undefined, 'defaultValues': {'title': string, 'shortcutText': string, 'url': string}}>>();
+  const subjectSearchResult = useRef<Subject<{'searchResults': Array<any> | undefined, 'searchResultsIdx': number | undefined}>>();
+
   const [shortcuts, setShortcuts] = useState<Array<any>>();
-  const subjectShortcutFormDialog = useRef<Subject<any>>();
-  const subjectSearchResult = useRef<Subject<any>>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isTitleSearch, setIsTitleSearch] = useState<boolean>(false);
 
@@ -37,13 +21,13 @@ export const Popup: React.FC = () => {
   const searchResultsCashe = useRef<Array<any>>([]);
   const searchResultsCasheIdx = useRef<number>();
 
-
   // 指定ミリ秒後に検索結果をレンダリングする
   const debouncedQuery = useDebounce(searchQuery, 200);
   useEffect(() => {
     refreshSearchResults();
   }, [debouncedQuery, shortcuts]);
 
+  // ストレージのデータが更新されたら、検索結果を更新する
   useEffect(() => {
     const handleShortcutsChange = (_changes: any, _namespace: string) => {
       chrome.storage.local.get(["shortcuts"], items => {
@@ -54,7 +38,7 @@ export const Popup: React.FC = () => {
         }
       });
       // 本当はここで検索結果を更新したいが、変数の値が閉じ込められるので、
-      // stateの更新によってeffectの処理を呼び出し、そこで検索結果を更新する。
+      // shortcuts（state）の更新によってeffectの処理を呼び出し、そこで検索結果を更新する。
       // refreshSearchResults();
     };
     chrome.storage.onChanged.addListener(handleShortcutsChange);
@@ -101,6 +85,8 @@ export const Popup: React.FC = () => {
       }
     }
     latestSearchResults = latestSearchResults ? latestSearchResults : [];
+    if (latestSearchResults.length === 0 && searchResultsCashe.current.length === 0) return;
+
     searchResultsCashe.current = latestSearchResults;
     searchResultsCasheIdx.current = undefined;
     setHint('');
@@ -135,7 +121,6 @@ export const Popup: React.FC = () => {
     }
   }, [shortcuts]);
 
-  // TODO: タイトル検索時のヒント機能はどうする？無効にする？
   const handleTextFieldKeyDown = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
     // 予測変換中に押されたキー入力は無視する
     if (keyEvent.nativeEvent.isComposing) return;
@@ -145,8 +130,8 @@ export const Popup: React.FC = () => {
       if (searchResultsCashe.current.length === 0) return;
       // リストの上と下を繋げる
       if (keyEvent.ctrlKey) {
-        if (searchResultsCasheIdx.current == undefined) return;
-        searchResultsCasheIdx.current = (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
+        searchResultsCasheIdx.current = (searchResultsCasheIdx.current === undefined) ? searchResultsCashe.current.length - 1 :
+          (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
       } else {
         searchResultsCasheIdx.current = (searchResultsCasheIdx.current == undefined) ? 0 :
           (searchResultsCasheIdx.current === searchResultsCashe.current.length-1) ? 0 : searchResultsCasheIdx.current + 1;

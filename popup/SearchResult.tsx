@@ -6,10 +6,13 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { Subject } from "rxjs";
 
-export const SearchResult = React.memo(({ openDialog, deleteShortcut, subject }: {
+type SearchResultProps = {
   openDialog: (title: string, shortcutText: string, url: string) => void,
   deleteShortcut: (title: string, shortcutText: string, url: string) => void,
-  subject: Subject<any>}) => {
+  subject: Subject<{'searchResults': Array<any> | undefined, 'searchResultsIdx': number | undefined}>
+};
+
+export const SearchResult = React.memo<SearchResultProps>(({ openDialog, deleteShortcut, subject }) => {
   const [openMenuShortcut, setOpenMenuShortcut] = useState<string>(''); // Menuは同時に1つしか開かないので、開いているMenuだけを保持すればいい
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [searchResults, setSearchResults] = useState<Array<any>>([]);
@@ -25,7 +28,7 @@ export const SearchResult = React.memo(({ openDialog, deleteShortcut, subject }:
       if (v.searchResults) {
         setSearchResults(v.searchResults);
         hintElem.current = undefined;
-      } else {
+      } else if(v.searchResultsIdx != undefined) { // 0はfalseと見なされる
         hintElem.current = listRef.current?.querySelector(`li:nth-child(${v.searchResultsIdx + 1})`);
         hintElem.current?.scrollIntoView(); // 要素がリストの一番上に来るようにスクロールする
         hintElem.current?.classList.add('hintElem'); // 強調表示の有無はクラスの有無で切り替える

@@ -10,7 +10,11 @@ type FormInputs = {
     "url": string
 }
 
-export const ShortcutFormDialog = React.memo(({ subject }: { subject: Subject<any> }) => {
+type ShortcutFormDialogProps = {
+    subject: Subject<{'shortcuts': Array<any> | undefined, 'defaultValues': {'title': string, 'shortcutText': string, 'url': string}}>
+};
+
+export const ShortcutFormDialog = React.memo<ShortcutFormDialogProps>(({ subject }) => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [defaultShortcutText, setDefaultShortcutText] = useState<string>(''); // レンダリング時に参照するので
     const shortcuts = useRef<Array<any>>([]);
@@ -18,7 +22,7 @@ export const ShortcutFormDialog = React.memo(({ subject }: { subject: Subject<an
 
     if (!doSubscribe.current) {
         subject.subscribe(v => {
-            shortcuts.current = v.shortcuts;
+            shortcuts.current = v.shortcuts ? v.shortcuts : [];
             // 「defaultValues」をセットしないと、HTMLのネイティブreset APIがフォームを復元してしまう。
             reset({
                 'title': v.defaultValues.title,
@@ -94,7 +98,7 @@ export const ShortcutFormDialog = React.memo(({ subject }: { subject: Subject<an
         };
 
         if (defaultShortcutText === '') {
-            shortcuts.current.push(inShortcut);
+            shortcuts.current.unshift(inShortcut);
         } else {
             const deleteIdx = shortcuts.current.findIndex(s => s.shortcutText === defaultShortcutText);
             shortcuts.current.splice(deleteIdx, 1, inShortcut);
