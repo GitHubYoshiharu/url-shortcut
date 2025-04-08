@@ -126,25 +126,29 @@ export const Popup: React.FC = () => {
     if (keyEvent.nativeEvent.isComposing) return;
 
     if (keyEvent.key === 'Tab'){
-      keyEvent.preventDefault();
-      if (searchResultsCashe.current.length === 0) return;
+      if (searchResultsCashe.current.length === 0){
+        keyEvent.preventDefault();
+        return;
+      }
       // リストの上と下を繋げる
       if (keyEvent.ctrlKey) {
-        searchResultsCasheIdx.current = (searchResultsCasheIdx.current === undefined) ? searchResultsCashe.current.length - 1 :
-          (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
+        // Hintがアクティブになっていないなら、デフォルトのCtrl+Tabの操作を有効にする
+        if (searchResultsCasheIdx.current === undefined) return;
+        searchResultsCasheIdx.current = (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
       } else {
         searchResultsCasheIdx.current = (searchResultsCasheIdx.current == undefined) ? 0 :
           (searchResultsCasheIdx.current === searchResultsCashe.current.length-1) ? 0 : searchResultsCasheIdx.current + 1;
       }
+      keyEvent.preventDefault();
       const hintText = isTitleSearch ? '' : searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
       setHint(hintText);
       subjectSearchResult.current?.next({'searchResults': undefined, 'searchResultsIdx': searchResultsCasheIdx.current});
     } else if(keyEvent.key === 'Enter'){
-      openUrl(keyEvent.ctrlKey, keyEvent.shiftKey);
+      openUrl(keyEvent);
     }
   };
 
-  const openUrl = (ctrlKey: boolean, shiftKey: boolean) => {
+  const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
     if (shortcuts == undefined) return;
 
     const matchIdx = shortcuts.findIndex(s => {
@@ -156,15 +160,16 @@ export const Popup: React.FC = () => {
       }
     });
     if (matchIdx !== -1) {
-      if (ctrlKey && shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
+      if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
         browser.tabs.create({ "url": shortcuts[matchIdx].url });
-      } else if (ctrlKey) { // Ctrl+Enter: 別タブで開く
+      } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
         browser.tabs.create({ "url": shortcuts[matchIdx].url, "active": false });
-      } else if (shiftKey) { // Shift+Enter: 別ウィンドウで開く
+      } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
         browser.windows.create({ "url": shortcuts[matchIdx].url, "state": "maximized" });
       } else { // Enter: 現在のタブで開く
         browser.tabs.update({ "url": shortcuts[matchIdx].url });
       }
+      refreshSearchResults(); // Hintカーソルを消し、Ctrl+Tabでタブを移動できるようにする
     }
   };
 
