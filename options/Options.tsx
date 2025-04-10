@@ -29,6 +29,7 @@ export const Options: React.FC = () => {
     <>
       <Stack>
         <Typography>半角変換機能</Typography>
+        <Typography variant="body2" color="textSecondary">検索フォームに入力された全角文字を自動で半角文字に変換する機能です。</Typography>
         {checkboxes.map(e => {
           return <FormControlLabel control={<Checkbox name={e.name} onChange={handleChange} checked={e.checked} />} label={e.label} />;
         })}
