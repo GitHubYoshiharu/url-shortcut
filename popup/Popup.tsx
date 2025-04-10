@@ -8,52 +8,66 @@ import { Subject } from 'rxjs';
 import { SearchResult } from './SearchResult';
 import { ShortcutFormDialog } from './ShortcutFormDialog';
 import { useDebounce } from './useDebounce';
+import { toHalfWidth } from './toHalfWidth';
+import type { CheckboxValues } from '../options/Options';
 
 export const Popup: React.FC = () => {
   const subjectShortcutFormDialog = useRef<Subject<{'shortcuts': Array<any> | undefined, 'defaultValues': {'title': string, 'shortcutText': string, 'url': string}}>>();
   const subjectSearchResult = useRef<Subject<{'searchResults': Array<any> | undefined, 'searchResultsIdx': number | undefined}>>();
 
-  const [shortcuts, setShortcuts] = useState<Array<any>>();
+  const shortcuts = useRef<Array<any>>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isTitleSearch, setIsTitleSearch] = useState<boolean>(false);
+  const [doConvIntoHalfWidth, setDoConvIntoHalfWidth] = useState<boolean>(false);
 
   const [hint, setHint] = useState<string>('');
   const searchResultsCashe = useRef<Array<any>>([]);
   const searchResultsCasheIdx = useRef<number>();
 
+  // オプションを読み込む
+  const checkboxOptions = useRef<Record<string, boolean>>({});
+  if (Object.keys(checkboxOptions.current).length === 0) {
+    chrome.storage.local.get(["options"], items => {
+      checkboxOptions.current = {};
+      items.options.forEach((o: CheckboxValues) => {
+        checkboxOptions.current[o.name] = o.checked;
+      });
+      setDoConvIntoHalfWidth(checkboxOptions.current["onAtStartup"]);
+    });
+  }
+
   // 指定ミリ秒後に検索結果をレンダリングする
   const debouncedQuery = useDebounce(searchQuery, 200);
   useEffect(() => {
     refreshSearchResults();
-  }, [debouncedQuery, shortcuts]);
+  }, [debouncedQuery]);
 
   // ストレージのデータが更新されたら、検索結果を更新する
   useEffect(() => {
+    // refreshSearchResults内でstateのsearchQueryを参照しているので、searchQueryが更新される度に再定義する
     const handleShortcutsChange = (_changes: any, _namespace: string) => {
       chrome.storage.local.get(["shortcuts"], items => {
         if(Object.keys(items).length === 0) {
-          setShortcuts(() => []);
+          shortcuts.current = [];
         } else {
-          setShortcuts(() => items.shortcuts);
+          shortcuts.current = items.shortcuts;
         }
       });
-      // 本当はここで検索結果を更新したいが、変数の値が閉じ込められるので、
-      // shortcuts（state）の更新によってeffectの処理を呼び出し、そこで検索結果を更新する。
-      // refreshSearchResults();
+      refreshSearchResults();
     };
     chrome.storage.onChanged.addListener(handleShortcutsChange);
 
     return () => {
         chrome.storage.onChanged.removeListener(handleShortcutsChange);
     };
-  }, []);
+  }, [searchQuery]);
 
-  if(shortcuts == undefined) {
+  if(shortcuts.current == undefined) {
     chrome.storage.local.get(["shortcuts"], items => {
       if(Object.keys(items).length === 0) {
-        setShortcuts(() => []);
+        shortcuts.current = [];
       } else {
-        setShortcuts(() => items.shortcuts);
+        shortcuts.current = items.shortcuts;
       }
     });
   }
@@ -65,21 +79,15 @@ export const Popup: React.FC = () => {
     subjectSearchResult.current = new Subject();
   }
 
-  // ???: refの型引数にHTMLInputElementを指定すると、「HTMLButtonElementですよ」と謎の文句を言われるので、
-  // ref経由でcheckedの値が取得できない。useStateから自力で指定するしかない。なにこれ？
-  const handleSearchTypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setIsTitleSearch(event.target.checked);
-  };
-
   const refreshSearchResults = () => {
     let latestSearchResults: Array<any> | undefined = [];
     if (searchQuery !== '') {
       if (isTitleSearch){ // タイトルで検索する
-        latestSearchResults = shortcuts?.filter(s => {
+        latestSearchResults = shortcuts.current?.filter(s => {
           return s.title.includes(searchQuery);
         });
       } else { // ショートカットで検索する
-        latestSearchResults = shortcuts?.filter(s => {
+        latestSearchResults = shortcuts.current?.filter(s => {
           return s.shortcutText.startsWith(searchQuery);
         });
       }
@@ -94,18 +102,17 @@ export const Popup: React.FC = () => {
   };
 
   // 以下のopenDialog()とdeleteShortcut()は、SearchResultにpropsで渡す関数なので、メモ化しておく。
-  // 1回も再定義しないと変数の値が閉じ込められるので、SearchResultを再レンダリングするタイミングで更新される
-  // shortcutsを依存値として指定する。
+  // ref.currentは毎回refから参照するので、stale-closureを気にしなくてもいい
 
   const openDialog = useCallback((title: string, shortcutText: string, url: string) => {
     subjectShortcutFormDialog.current?.next({
-      shortcuts: shortcuts,
+      shortcuts: shortcuts.current,
       defaultValues: {'title': title, 'shortcutText': shortcutText, 'url': url}
     });
-  }, [shortcuts]);
+  }, []);
 
   const deleteShortcut = useCallback((title: string, shortcutText: string, url: string) => {
-    if (shortcuts == undefined) return;
+    if (shortcuts.current == undefined) return;
 
     const message = `
       以下のショートカットを削除します。よろしいですか？\n
@@ -114,15 +121,15 @@ export const Popup: React.FC = () => {
       URL: ${url}
     `;
     if ( window.confirm(message) ) {
-      const matchIdx = shortcuts.findIndex(s => s.shortcutText === shortcutText);
+      const matchIdx = shortcuts.current.findIndex(s => s.shortcutText === shortcutText);
       if (matchIdx === -1) return;
-      shortcuts.splice(matchIdx, 1);
-      chrome.storage.local.set({"shortcuts": shortcuts});
+      shortcuts.current.splice(matchIdx, 1);
+      chrome.storage.local.set({"shortcuts": shortcuts.current});
     }
-  }, [shortcuts]);
+  }, []);
 
   const handleTextFieldKeyDown = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
-    // 予測変換中に押されたキー入力は無視する
+    // 予測変換中のキー入力は無視する
     if (keyEvent.nativeEvent.isComposing) return;
 
     if (keyEvent.key === 'Tab'){
@@ -148,10 +155,29 @@ export const Popup: React.FC = () => {
     }
   };
 
-  const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
-    if (shortcuts == undefined) return;
+  const handleTextFieldChange = (keyEvent: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(keyEvent.currentTarget.value);
+  };
 
-    const matchIdx = shortcuts.findIndex(s => {
+  const handleCompositionStart = (event: React.CompositionEvent<HTMLInputElement>) => {
+    if (!doConvIntoHalfWidth) return;
+
+    // currentTargetはイベントハンドラ以外からは参照できない（nullになる）
+    const targetElem = event.target as HTMLInputElement;
+    // IMEウィンドウが開くまでと閉じるまでの時間を待機する（Microsoft IMEは閉じるまでに時間がかかる）
+    setTimeout(() => {
+      targetElem.blur();
+      setTimeout(() => {
+        setSearchQuery( toHalfWidth(targetElem.value) );
+        targetElem.focus();
+      }, 10);
+    }, 10);
+  };
+
+  const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
+    if (shortcuts.current == undefined) return;
+
+    const matchIdx = shortcuts.current.findIndex(s => {
       if (isTitleSearch && searchResultsCasheIdx.current != undefined) {
         const hintShortcutText = searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
         return s.shortcutText === hintShortcutText;
@@ -161,22 +187,46 @@ export const Popup: React.FC = () => {
     });
     if (matchIdx !== -1) {
       if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
-        browser.tabs.create({ "url": shortcuts[matchIdx].url });
+        browser.tabs.create({ "url": shortcuts.current[matchIdx].url });
       } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
-        browser.tabs.create({ "url": shortcuts[matchIdx].url, "active": false });
+        browser.tabs.create({ "url": shortcuts.current[matchIdx].url, "active": false });
       } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
-        browser.windows.create({ "url": shortcuts[matchIdx].url, "state": "maximized" });
+        browser.windows.create({ "url": shortcuts.current[matchIdx].url, "state": "maximized" });
       } else { // Enter: 現在のタブで開く
-        browser.tabs.update({ "url": shortcuts[matchIdx].url });
+        browser.tabs.update({ "url": shortcuts.current[matchIdx].url });
       }
       refreshSearchResults(); // Hintカーソルを消し、Ctrl+Tabでタブを移動できるようにする
     }
+  };
+  
+  // ???: refの型引数にHTMLInputElementを指定すると、「HTMLButtonElementですよ」と謎の文句を言われるので、
+  // ref経由でcheckedの値が取得できない。useStateから自力で指定するしかない。なにこれ？
+  const handleSearchTypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      if (checkboxOptions.current["offAtSwitchingToTitleSearch"]) {
+        setDoConvIntoHalfWidth(false);
+      }
+    } else {
+      if (checkboxOptions.current["onAtSwitchingToShortcutSearch"]) {
+        setDoConvIntoHalfWidth(true);
+      }
+    }
+    setIsTitleSearch(event.target.checked);
+  };
+
+  const handleDoConvChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setDoConvIntoHalfWidth(event.target.checked);
   };
 
   return (
     <>
       <ShortcutFormDialog subject={subjectShortcutFormDialog.current} />
       <Box sx={{'padding': '4px'}} flexDirection="row" justifyContent="flex-end" display="flex">
+        <FormControlLabel 
+          slotProps={{ typography: { variant: 'body2' } }}
+          control={<Switch checked={doConvIntoHalfWidth} onChange={handleDoConvChange} size='small' />}
+          label="自動半角変換"
+        />
         <Button variant="contained" onClick={() => openDialog('', '', '')} startIcon={<AddIcon fontSize='small' />}>追加</Button>
       </Box>
       <Paper elevation={2} sx={{'padding': '10px 0px', 'margin': '8px 12px'}}>
@@ -198,7 +248,8 @@ export const Popup: React.FC = () => {
             <TextField 
               type="text"
               onKeyDown={handleTextFieldKeyDown}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              onChange={handleTextFieldChange}
+              onCompositionStart={handleCompositionStart}
               value={searchQuery}
               size='small'
               autoFocus

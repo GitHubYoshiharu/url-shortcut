@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "url-shortcut",
-  "version": "1.1",
+  "version": "1.2",
   "description": "設定したショートカットテキストで特定のURLを開けるようにします。",
   "icons": {
     "16": "icons/icon16.png",
@@ -15,6 +15,11 @@
         "16": "icons/icon16.png",
         "32": "icons/icon32.png"
      }
+  },
+  "options_page": "options/options.html",
+  "background": {
+    "service_worker": "service_worker/serviceWorker.js",
+    "type": "module"
   },
   "permissions": ["tabs", "storage"]
 }
