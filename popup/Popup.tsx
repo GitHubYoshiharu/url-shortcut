@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
-import { Box, Button, FormControlLabel, InputAdornment, Stack, Switch, TextField, Paper, Typography } from "@mui/material";
+import { Box, Button, FormControlLabel, InputAdornment, Stack, Switch, TextField, Paper, Typography, Tooltip } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import { Subject } from 'rxjs';
@@ -10,6 +10,7 @@ import { ShortcutFormDialog } from './ShortcutFormDialog';
 import { useDebounce } from './useDebounce';
 import { toHalfWidth } from './toHalfWidth';
 import type { CheckboxValues } from '../options/Options';
+import { match } from 'assert';
 
 export const Popup: React.FC = () => {
   const subjectShortcutFormDialog = useRef<Subject<{'shortcuts': Array<any> | undefined, 'defaultValues': {'title': string, 'shortcutText': string, 'url': string}}>>();
@@ -87,8 +88,14 @@ export const Popup: React.FC = () => {
           return s.title.includes(searchQuery);
         });
       } else { // ショートカットで検索する
+        const searchReg = /\s%s$/;
+        // 検索ショートカットの「%s」部分は任意の文字列でマッチさせる。
         latestSearchResults = shortcuts.current?.filter(s => {
-          return s.shortcutText.startsWith(searchQuery);
+          if( searchReg.test(s.shortcutText) ){
+            return s.shortcutText.startsWith(searchQuery) || searchQuery.startsWith( s.shortcutText.replace(/%s$/, "") );
+          } else {
+            return s.shortcutText.startsWith(searchQuery);
+          }
         });
       }
     }
@@ -132,21 +139,26 @@ export const Popup: React.FC = () => {
     // 予測変換中のキー入力は無視する
     if (keyEvent.nativeEvent.isComposing) return;
 
+    // 自動半角変換はページ内検索クエリを入力する際に邪魔になるので、ショートカットキーで切り替えられるようにする。
+    // IMEの無効/有効を切り替えるショートカットキーと同じにしてしまうと、最後に押すキーの入力がIMEに吸われ、keydownイベントが発生しない。
+    if (keyEvent.ctrlKey && keyEvent.shiftKey && keyEvent.key === 'H'/* 'H'alfWidth */){ 
+      setDoConvIntoHalfWidth(!doConvIntoHalfWidth);
+      return;
+    }
     if (keyEvent.key === 'Tab'){
-      if (searchResultsCashe.current.length === 0){
-        keyEvent.preventDefault();
-        return;
-      }
+      if (searchResultsCashe.current.length === 0) return;
+      if (keyEvent.ctrlKey) return; // デフォルトのCtrl+Tabの操作を有効にする
+
+      keyEvent.preventDefault();
       // リストの上と下を繋げる
-      if (keyEvent.ctrlKey) {
-        // Hintがアクティブになっていないなら、デフォルトのCtrl+Tabの操作を有効にする
+      if (keyEvent.shiftKey) {
+        // Hintがアクティブになっていないなら無効にする
         if (searchResultsCasheIdx.current === undefined) return;
         searchResultsCasheIdx.current = (searchResultsCasheIdx.current === 0) ? searchResultsCashe.current.length - 1 : searchResultsCasheIdx.current - 1;
       } else {
         searchResultsCasheIdx.current = (searchResultsCasheIdx.current == undefined) ? 0 :
           (searchResultsCasheIdx.current === searchResultsCashe.current.length-1) ? 0 : searchResultsCasheIdx.current + 1;
       }
-      keyEvent.preventDefault();
       const hintText = isTitleSearch ? '' : searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
       setHint(hintText);
       subjectSearchResult.current?.next({'searchResults': undefined, 'searchResultsIdx': searchResultsCasheIdx.current});
@@ -177,25 +189,42 @@ export const Popup: React.FC = () => {
   const openUrl = (keyEvent: React.KeyboardEvent<HTMLInputElement>) => {
     if (shortcuts.current == undefined) return;
 
-    const matchIdx = shortcuts.current.findIndex(s => {
+    // 検索ショートカットテキストとその他のショートカットテキストが重複する可能性があるので、登録順によって動作が変わらないように両方取得する。
+    const searchReg = /\s%s$/;
+    const matchArray = shortcuts.current.filter(s => {
       if (isTitleSearch && searchResultsCasheIdx.current != undefined) {
         const hintShortcutText = searchResultsCashe.current[searchResultsCasheIdx.current].shortcutText;
         return s.shortcutText === hintShortcutText;
       } else {
-        return (s.shortcutText === searchQuery) || (s.shortcutText === hint);
+        if( searchReg.test(s.shortcutText) ){
+          // 検索ショートカットの「%s」部分に任意の文字列を許容した場合にマッチするかを調べる。
+          return searchQuery.startsWith( s.shortcutText.replace(/%s$/, "") );
+        } else {
+          return (s.shortcutText === searchQuery) || (s.shortcutText === hint);
+        }
       }
     });
-    if (matchIdx !== -1) {
-      if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
-        browser.tabs.create({ "url": shortcuts.current[matchIdx].url });
-      } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
-        browser.tabs.create({ "url": shortcuts.current[matchIdx].url, "active": false });
-      } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
-        browser.windows.create({ "url": shortcuts.current[matchIdx].url, "state": "maximized" });
-      } else { // Enter: 現在のタブで開く
-        browser.tabs.update({ "url": shortcuts.current[matchIdx].url });
+    if (matchArray.length > 0) {
+      let openShortcut = matchArray[0];
+      if (matchArray.length === 2) {
+        // 検索ショートカットじゃない方を先に単一化する。でないと二度と開けなくなる。
+        openShortcut = searchReg.test( openShortcut.shortcutText ) ? matchArray[1] : openShortcut;
       }
-      refreshSearchResults(); // Hintカーソルを消し、Ctrl+Tabでタブを移動できるようにする
+      let openUrl = openShortcut.url;
+      if ( searchReg.test(openShortcut.shortcutText) ){
+        const commonText = openShortcut.shortcutText.replace(/%s$/, "");
+        const urlSearchQuery = searchQuery.substring(commonText.length);
+        openUrl = openUrl.replaceAll("%s", urlSearchQuery);
+      }
+      if (keyEvent.ctrlKey && keyEvent.shiftKey){ // Ctrl+Shift+Enter: 別タブで開いて移動
+        browser.tabs.create({ "url": openUrl });
+      } else if (keyEvent.ctrlKey) { // Ctrl+Enter: 別タブで開く
+        browser.tabs.create({ "url": openUrl, "active": false });
+      } else if (keyEvent.shiftKey) { // Shift+Enter: 別ウィンドウで開く
+        browser.windows.create({ "url": openUrl, "state": "maximized" });
+      } else { // Enter: 現在のタブで開く
+        browser.tabs.update({ "url": openUrl });
+      }
     }
   };
   
@@ -222,11 +251,15 @@ export const Popup: React.FC = () => {
     <>
       <ShortcutFormDialog subject={subjectShortcutFormDialog.current} />
       <Box sx={{'padding': '4px'}} flexDirection="row" justifyContent="flex-end" display="flex">
-        <FormControlLabel 
-          slotProps={{ typography: { variant: 'body2' } }}
-          control={<Switch checked={doConvIntoHalfWidth} onChange={handleDoConvChange} size='small' />}
-          label="自動半角変換"
-        />
+        <Tooltip title="Ctrl+Shift+H" arrow>
+          <FormControlLabel 
+            slotProps={{ typography: { variant: 'body2' } }}
+            control={
+                <Switch checked={doConvIntoHalfWidth} onChange={handleDoConvChange} size='small' />
+            }
+            label="自動半角変換"
+          />
+        </Tooltip>
         <Button variant="contained" onClick={() => openDialog('', '', '')} startIcon={<AddIcon fontSize='small' />}>追加</Button>
       </Box>
       <Paper elevation={2} sx={{'padding': '10px 0px', 'margin': '8px 12px'}}>
@@ -253,7 +286,8 @@ export const Popup: React.FC = () => {
               value={searchQuery}
               size='small'
               autoFocus
-              slotProps={{
+              autoComplete='off'
+            slotProps={{
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">

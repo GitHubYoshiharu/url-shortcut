@@ -72,7 +72,7 @@ export const ShortcutFormDialog = React.memo<ShortcutFormDialogProps>(({ subject
             }
         },
         "url": {
-            required: "入力必須です",
+            required: "入力必須です",            
             validate: (data: string) => {
                 if (data.trim().length === 0){
                     return "スペースのみでは登録できません";
@@ -143,11 +143,12 @@ export const ShortcutFormDialog = React.memo<ShortcutFormDialogProps>(({ subject
                                 error={fieldState.invalid}
                                 helperText={fieldState.error?.message}
                                 size='small'
+                                autoComplete='off'
                             />
                             <Tooltip title="現在のタブからコピー">
-                            <IconButton aria-label="copy title" type="button" onClick={copyTitle}>
-                                <CopyIcon fontSize='small' />
-                            </IconButton>
+                              <IconButton aria-label="copy title" type="button" onClick={copyTitle}>
+                                  <CopyIcon fontSize='small' />
+                              </IconButton>
                             </Tooltip>
                         </Stack>
                     )}
@@ -165,6 +166,7 @@ export const ShortcutFormDialog = React.memo<ShortcutFormDialogProps>(({ subject
                         error={fieldState.invalid}
                         helperText={fieldState.error?.message}
                         size='small'
+                        autoComplete='off'
                     />
                     )}
                 />
@@ -182,11 +184,12 @@ export const ShortcutFormDialog = React.memo<ShortcutFormDialogProps>(({ subject
                                 error={fieldState.invalid}
                                 helperText={fieldState.error?.message}
                                 size='small'
+                                autoComplete='off'
                             />
                             <Tooltip title="現在のタブからコピー">
-                            <IconButton aria-label="copy URL" type="button" onClick={copyUrl}>
-                                <CopyIcon fontSize='small' />
-                            </IconButton>
+                              <IconButton aria-label="copy URL" type="button" onClick={copyUrl}>
+                                  <CopyIcon fontSize='small' />
+                              </IconButton>
                             </Tooltip>
                         </Stack>
                     )}

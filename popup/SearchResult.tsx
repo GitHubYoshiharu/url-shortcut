@@ -38,8 +38,9 @@ export const SearchResult = React.memo<SearchResultProps>(({ openDialog, deleteS
   }
 
   // onClickイベントでは、マウスボタンの入力状況は取得できないらしい
-  const handleListItemClick = (url: string, event: React.MouseEvent) => {
+  const handleListItemClick = (shortcutText: string, url: string, event: React.MouseEvent) => {
     event.stopPropagation();
+    if ( /\s%s$/.test(shortcutText) ) return; // 検索ショートカットは検索クエリを参照しなければURLを開けない
 
     // Ctrl+Shift+クリック・Shift+ホイールクリック：別のタブで開いて移動
     // Ctrl+クリック・ホイールクリック：別のタブで開く
@@ -84,10 +85,11 @@ export const SearchResult = React.memo<SearchResultProps>(({ openDialog, deleteS
               disablePadding
               alignItems='flex-start'
               divider
-              sx={{ 
+              sx={{
                 'borderLeft': '1px solid rgba(0, 0, 0, 0.12)',
                 'borderRight': '1px solid rgba(0, 0, 0, 0.12)',
-                'borderTop': (idx === 0) ? '1px solid rgba(0, 0, 0, 0.12)' : 'none'
+                'borderTop': (idx === 0) ? '1px solid rgba(0, 0, 0, 0.12)' : 'none',
+                'backgroundColor': /\s%s$/.test(elem.shortcutText) ? 'rgb(200, 255, 200)' : 'rgb(255, 255, 255)'
               }}
               secondaryAction={
                 <div>
@@ -124,7 +126,7 @@ export const SearchResult = React.memo<SearchResultProps>(({ openDialog, deleteS
               <ListItemButton 
                 role={undefined}
                 sx={{'padding-left': '14px'}}
-                onMouseDown={(event) => handleListItemClick(elem.url, event)}
+                onMouseDown={(event) => handleListItemClick(elem.shortcutText, elem.url, event)}
               >
                 <Grid2
                   container
