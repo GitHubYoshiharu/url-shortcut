@@ -147,7 +147,7 @@ export const Popup: React.FC = () => {
     }
     if (keyEvent.key === 'Tab'){
       if (searchResultsCashe.current.length === 0) return;
-      if (keyEvent.ctrlKey) return; // デフォルトのCtrl+Tabの操作を有効にする
+      if (keyEvent.ctrlKey || keyEvent.altKey || keyEvent.metaKey) return; // shift+Tab以外のデフォルトの操作を有効にする
 
       keyEvent.preventDefault();
       // リストの上と下を繋げる
